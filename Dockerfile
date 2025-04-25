@@ -12,12 +12,18 @@ COPY docker/webpagereplay/wpr_key.pem /webpagereplay/certs/
 COPY docker/webpagereplay/deterministic.js /webpagereplay/scripts/deterministic.js
 COPY docker/webpagereplay/LICENSE /webpagereplay/
 
-RUN sudo apt-get update && sudo apt-get install libnss3-tools \
+RUN apt-get update && apt-get install -y \
+    curl \
+    libnss3-tools \
     net-tools \
     build-essential \
-    iproute2 -y && \
+    iproute2 && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g npm@latest && \
     mkdir -p $HOME/.pki/nssdb && \
-    certutil -d $HOME/.pki/nssdb -N
+    certutil -d $HOME/.pki/nssdb -N && \
+    apt-get clean
 
 ENV PATH="/usr/local/bin:${PATH}"
 
@@ -35,19 +41,27 @@ COPY ./bin/ /usr/src/app/bin/
 COPY ./lib/ /usr/src/app/lib/
 RUN rm -fR /usr/src/app/node_modules/selenium-webdriver/bin
 
+# Устанавливаем Express для API
+RUN npm install express
+
+# Копируем server.js
+COPY server.js /usr/src/app/server.js
+
+# Проверяем наличие файлов и Node.js
+RUN echo "Node version:" && node --version && \
+    echo "NPM version:" && npm --version && \
+    echo "Files in /usr/src/app:" && ls -la /usr/src/app
+
 COPY docker/scripts/start.sh /start.sh
 
-## This is to avoid click the OK button
+# Настраиваем Android и sudo
 RUN mkdir -m 0750 /root/.android
 ADD docker/adb/insecure_shared_adbkey /root/.android/adbkey
 ADD docker/adb/insecure_shared_adbkey.pub /root/.android/adbkey.pub
-
-# Allow all users to run commands needed by sitespeedio/throttle via sudo
-# See https://github.com/sitespeedio/throttle/blob/main/lib/tc.js
 RUN echo 'ALL ALL=NOPASSWD: /usr/sbin/tc, /usr/sbin/route, /usr/sbin/ip' > /etc/sudoers.d/tc
 
-ENTRYPOINT ["/start.sh"]
-VOLUME /sitespeed.io
-VOLUME /baseline
+# Открываем порт для API
+EXPOSE 3000
 
-WORKDIR /sitespeed.io
+# Запускаем Node.js-сервер вместо start.sh
+CMD ["node", "server.js"]
